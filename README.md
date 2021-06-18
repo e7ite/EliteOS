@@ -1,7 +1,9 @@
 # MultithreadedKernel
 An OS from ground up.
 
-Credits:
+## Dependencies
+QEMU: Machine Emulator used to test this operating system.
+
 ## Credits:
 Name|Reason
 ----|------
