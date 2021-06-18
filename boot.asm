@@ -70,14 +70,13 @@ printChar:
     int 10h
     ret
 
-
-; Setup the boot signature at end of this 512-byte sector so the BIOS detects
-; we are a bootloader. Word at 0x511 should be 0x55AA (this CPU is little endian, 
-; so should be 0xAA55)
-
 ; Greeting null-terminated string. 
 greeting db "Hello world!", 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
 times 510 - ($ - $$) db 0
+
+; Setup the boot signature at end of this 512-byte sector so the BIOS detects
+; we are a bootloader. Word at 0x511 should be 0x55AA (this CPU is little endian, 
+; so should be 0xAA55)
 dw 0AA55h
