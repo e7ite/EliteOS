@@ -7,7 +7,9 @@
 ; qemu-system-x86_64 -hda boot.bin
 ; -hda boot.bin: Treat boot.bin as hard disk
 
-; BIOS loads us into address 0x7C00
+; BIOS loads us into address 0x7C00, so tell the NASM to expect to be loaded
+; here, so it can help it correctly calculate offsets of the program, such
+; as the greeting message.  
 org 0x7C00
 
 ; We start in real mode which is 16bit addressing only
