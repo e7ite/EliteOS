@@ -75,7 +75,7 @@ printChar:
 greeting db "Hello world!", 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
-; $: current value for instruction pointer
+; $: current address of program after adding everything above.
 ; $$: Address for start of current segment. 0 in this case
 ; Pads 510 - (%eip - 0) zero bytes for rest of sector
 times 510 - ($ - $$) db 0
