@@ -4,8 +4,8 @@
 ; -f bin: Format as binary file
 ; -o boot.bin: output file names as boot.bin
 ; To run QEMU to execute this, run it as 
-; qemu-system-x86_64 -hda
-; -hda: Hard drive
+; qemu-system-x86_64 -hda boot.bin
+; -hda boot.bin: Treat boot.bin as hard disk
 
 ; BIOS loads us into address 0x7C00
 org 0x7C00
@@ -50,8 +50,7 @@ repeat:
     push bx
     call printChar
     pop bx
-
-    ; Increment the counter and 
+    ; Increment the counter and repeat code above
     inc bx
     jmp repeat
 end:
@@ -66,7 +65,7 @@ printChar:
     mov al, dl
     ; We can ignore page number and color
     mov bx, 0
-    ; Calling BIOS video routine, which will display character 'A' to teletype output
+    ; Calling BIOS video routine, which will display character in al to teletype output
     int 10h
     ret
 
@@ -74,6 +73,9 @@ printChar:
 greeting db "Hello world!", 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
+; $: current value for instruction pointer
+; $$: Address for start of current segment. 0 in this case
+; Pads 510 - (%eip - 0) zero bytes for rest of sector
 times 510 - ($ - $$) db 0
 
 ; Setup the boot signature at end of this 512-byte sector so the BIOS detects
