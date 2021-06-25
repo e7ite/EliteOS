@@ -1,8 +1,9 @@
-# MultithreadedKernel
+# EliteOS
 An OS from ground up.
 
 ## Dependencies
 QEMU: Machine Emulator used to test this operating system.
+CMake: Build system
 
 ## Credits:
 Name|Reason
