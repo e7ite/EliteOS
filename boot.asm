@@ -7,6 +7,10 @@
 ; qemu-system-x86_64 -hda boot.bin
 ; -hda boot.bin: Treat boot.bin as hard disk
 
+; Physical RAM Layout:
+; 0x00-0x400: Interrupt vector table (256 entries of 4 bytes)
+; 0x7C00: Our bootloader
+
 ; BIOS Video subroutine Int 10
 ; Displays character in AL to screen, advances cursor, and scrolls screen if needed
 ; AX:
@@ -15,7 +19,6 @@
 ; BX:
 ;   BH: Page number
 ;   BL: foreground color (graphics mode)
-
 
 ; Tell NASM that we expect to be loaded at offset 0 in RAM. In actuality, we 
 ; will be loaded in 0x7C00 in RAM by the BIOS. But every data access will be
@@ -31,15 +34,22 @@ bits 16
 ; storage medium.
 bpb_start:
     ; Jump over the BIOS parameter block information
-    jmp short _start
+    jmp short set_csip
     nop
     ; Fill the rest of the BIOS parameter block with 0s for now
     times 024h - ($ - $$) db 0
 
 ; Make sure we jump to the start label. We explicitly set the code segment here
 ; This jmp ptr16:16 call will cause CS and IP to be updated
-_start:
+set_csip:
     jmp 7C0h:start
+
+; My first interrupt implementation which should be int 0. The processor
+; expects interrupt 0 to handle divide by zero, so this should do so
+div_by_zero:
+    mov si, div_zero_err
+    call print
+    iret
 
 ; Entry point
 start:
@@ -55,19 +65,28 @@ start:
     mov ax, 7C0h
     mov ds, ax     ; Data segment
     mov es, ax     ; Extra segment
-    mov ax, 0h 
+    mov ax, 0
     mov ss, ax     ; Stack segment
     mov sp, 07C00h ; Stack pointer, will grow downwards
     ; Enables interrupts again by setting the interrupt flags
     sti 
 
+    ; Set the first interrupt's offset to point to the function div_by_zero
+    ; in the interrupt vector table to invoke the div_by_zero subroutine.
+    ; Using the stack segment since we do not want to implicitly use the data
+    ; segment since it is 0x7C0
+    mov word [ss:0], div_by_zero
+    ; Set the first interrupt's segment to aid in pointing to where our bootloader is
+    mov word [ss:2], 7C0h
+
+    ; Print alert of the message
+    mov si, stuff
+    call print
+
     ; Load the address of greeting string to si register
     mov si, greeting
 
     ; Call our subroutine to print the string
-    call print
-
-    mov si, sup
     call print
 
     ; Jump to itself so we don't try to execute anything afterwards
@@ -110,8 +129,9 @@ printChar:
     ret
 
 ; Greeting null-terminated string. 
-greeting db "Hello world!", 0Dh, 0Ah, 0 0
-sup db "Hey man prod man  how u doin tonight!", 0Dh, 0Ah, 0
+stuff db "About to divide by zero", 0Dh, 0Ah, 0
+greeting db "Hello world!", 0Dh, 0Ah, 0
+div_zero_err db "DivByZero", 0Dh, 0Ah, 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
 ; $: current address of program after adding everything above.
