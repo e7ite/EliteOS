@@ -11,11 +11,9 @@
 ; 0x00-0x400: Interrupt vector table (256 entries of 4 bytes)
 ; 0x7C00: Our bootloader
 
-; Tell NASM that we expect to be loaded at offset 0 in RAM. In actuality, we 
-; will be loaded in 0x7C00 in RAM by the BIOS. But every data access will be
-; offset by 0x7C0 * 0x10 due to the segmentation since we setup the registers up
-; We don't want NASM to add another base offset
-org 0
+; Tell NASM that we expect to be loaded at offset 0x7C00 in RAM. Every label
+; should be offset by 0x7C00 now.
+org 07C00h
 
 ; We start in real mode which is 16-bit addressing only
 bits 16
@@ -33,7 +31,7 @@ bpb_start:
 ; Make sure we jump to the start label. We explicitly set the code segment here
 ; This jmp ptr16:16 call will cause CS and IP to be updated
 set_csip:
-    jmp 7C0h:start
+    jmp 0h:start
 
 ; Entry point
 start:
@@ -44,62 +42,38 @@ start:
     ; Setup the segment registers. We have to use a register to set their values
     ; We do this because we don't want to rely on the BIOS to set them up for us
     ; and potentially get the wrong address of labels. It could set our segment
-    ; registers to 0, and origin to 0x7C00, or vice versa since all computers
-    ; are different.
-    mov ax, 7C0h
+    ; registers to 0, and origin to 0x7C00, or vice versa since some BIOSes are different.
+    mov ax, 0
     mov ds, ax     ; Data segment
     mov es, ax     ; Extra segment
-    mov ax, 0
     mov ss, ax     ; Stack segment
-    mov sp, 07C00h ; Stack pointer, will grow downwards
+    mov sp, 07C00h ; Stack pointer currently will point to data in RAM before this bootloader
+
+    ; Use cpuid to check if our processor supports long mode. Will assume that
+    ; NOTE: Assuming cpuid exists on this PC. This could be a potential bug.
+    mov eax, 80000000h ; Check if we have any extended fxns
+    cpuid
+    cmp eax, 80000000h ; If no extended fxns (eax <= 0x80000000), no long mode
+    jbe long_mode_not_found
+    mov eax, 80000001h ; Use extended fxn 80000001h to verify long mode
+    cpuid
+    bt edx, 29 ; Copy long mode bit into carry flag and check if set
+    jnc long_mode_not_found
+    ; We should have long mode verified at this point
+    mov si, long_mode_found_str
+    call print
+    jmp done
+
+long_mode_not_found:
+    mov si, long_mode_not_found_str
+    call print
+    jmp done
+
     ; Enables interrupts again by setting the interrupt flags
+    ; TODO: Remember to tell BIOS what mode we plan to boot in with int 15h
+done:
     sti
 
-    ; BIOS Disk subroutine Int 13h 
-    ; AX:
-    ;   AH: 02h Read Sector Using CHS (cylinder head sector) Will read a sector from specified disk
-    ;           and store that sector into buffer pointed to by ES:BX
-    ;   AL: Number of sectors to read (cannot be zero)
-    ; CX:
-    ;   CH: Low eight bits of the cylinder number
-    ;   CL: sector number 1-63 (bits 0-5). high two bits of cylinder (bits 6-7, hard disk only)
-    ; DX:
-    ;   DH: head number
-    ;   DL: Drive number
-    ; ES:BX: Data buffer to store sector to
-    ; 
-    ; Returns
-    ; CF flag set if error. Cleareed if successful
-    ; If AH == 11h (Corrected ECC error)
-    ;   AL = burst length
-    ; AH = status
-    ; AL = number of sectors transferred. Only valid if CF is set on some BIOSes)
-    ;
-    ; It is important to know that my BIOS might have some issues due to USB
-    ; emulation. THe cylinder head, and track numbers might be off.
-    ;
-    ; We didn't set DL before any point in this code, which is important because
-    ; the BIOS should have set DL to the drive number for us. Later we should
-    ; preserve it on the stack.
-    mov ah, 2      ; Disk read mode
-    mov al, 1      ; Number of sectors to read
-    mov ch, 0      ; Low eight bits of the cylinder number
-    mov cl, 2      ; Sector 2 from hard disk.
-    mov dh, 0      ; Head number
-    mov bx, buffer ; THe buffer which will be accessed as ES:BX 
-    int 13h
-    jnc read_success ; If carry bit is not set, it was successful
-    ; If int 13h set the carry flag, we want to print error
-    mov si, disk_read_failure
-    call print
-    jmp done 
-read_success:
-    ; Print the data buffer. We zeroed out the sector so we are know there is
-    ; a spot to stop reading the string from
-    mov si, buffer
-    call print
-done:
-    ; Jump to itself so we don't try to execute anything afterwards
     jmp $
 
 ; print: Prints a nullterminated string 
@@ -147,7 +121,20 @@ printChar:
     int 10h
     ret
 
-disk_read_failure: db "Failed to read hard disk", 0Dh, 0Ah, 0
+; Global descriptor table. It contains its size (4 bytes) and its location
+; (4 bytes). This is only for a 32-bit memory model. We will use the 
+; paging memory model so we can leave
+; these as default. 
+global_descriptor_table:
+; Here is the global descriptor table, which tells the processor about memory
+; segments. Used for 32-bit mode, but we will not really use this
+gdt_prot_code_segment:
+    dw 0FFFFh ; Limit or highest accessable address by this segment (Bits 0-15)
+    dw 0      ; Base address or start of the segment  
+    db 0      ; 
+
+long_mode_found_str db "Long mode exists!", 0Dh, 0Ah, 0
+long_mode_not_found_str db "Long mode does not exist :(", 0Dh, 0Ah, 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
 ; $: current address of program after adding everything above.
@@ -159,8 +146,3 @@ times 1FEh - ($ - $$) db 0
 ; we are a bootloader. Word at 0x511 should be 0x55AA (this CPU is little endian, 
 ; so should be 0xAA55)
 dw 0AA55h
-
-; We will have this label point to the physical address in RAM right after the 
-; bootloader after as a data buffer. This is where we will store the copy of the 
-; second hard disk sector which contains the message.
-buffer:
