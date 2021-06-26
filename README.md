@@ -2,10 +2,9 @@
 An OS from ground up. Right now it is only a legacy BIOS compatible bootloader.
 
 ## Build Instructions
-1. Get the repository.
-2. Tell CMake where to create the Makefile. I'd recommend `mkdir build && cmake -S . -B build`
-3. Run `make`
-4. Done! `boot.bin` is the bootloader which you can load on QEMU or a x86_64 processor with legacy BIOS firmware.
+1. Get this repository 
+2. Build the bootloader. If you want to use my script, make `scripts/build.sh` executable using `chmod +x scripts/build.sh`, and run it using `scripts/build.sh`. If the script doesn't work for you or you don't want to use my script, configure CMake using something like `mkdir build && cmake -S . -B build` and `cd build && make`. 
+3. Done! `boot.bin` is the bootloader which you can load on QEMU or on a PC with an x86_64 processor with legacy BIOS firmware.
 
 ## Dependencies
 CMake: Build system
