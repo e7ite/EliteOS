@@ -1,5 +1,5 @@
 # EliteOS
-An OS from ground up, strictly made for learning purposes. Right now it is only a legacy BIOS compatible bootloader. This is obviously not elite compared to other operating systems. I just like the word elite.
+An OS from ground up, strictly made for learning purposes. Right now it is only a bootloader compatible with legacy BIOS. This is obviously not elite compared to other operating systems. I just like the word elite.
 
 ## Build Instructions
 1. Get this repository 
