@@ -1,5 +1,5 @@
 # EliteOS
-An OS from ground up. Right now it is only a legacy BIOS compatible bootloader.
+An OS from ground up, strictly made for learning purposes. Right now it is only a legacy BIOS compatible bootloader. This is obviously not elite compared to other operating systems. I just like the word elite.
 
 ## Build Instructions
 1. Get this repository 
@@ -10,9 +10,13 @@ An OS from ground up. Right now it is only a legacy BIOS compatible bootloader.
 CMake: Build system
 
 ## Testing
-I have tested this on a Lenovo Thinkpad 11E with Intel Celero N3160.
+I have tested this on a Lenovo Thinkpad 11E with Intel Celero N3160 and QEMU v1.3.0.
 
 ## Credits:
 Name|Reason
 ----|------
 [Daniel McCarthy](https://dragonzap.com/course/developing-a-multithreaded-kernel-from-scratch) | Course on developing a multithreaded kernel from scratch
+[Intel](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html) | Documentation on x86_64 ISA and Intel x86_64 processors
+[AMD](https://developer.amd.com/resources/developer-guides-manuals/) | Documentation on x86_64 ISA and AMD x86_64 processors
+[OSDev Wiki](https://wiki.osdev.org/Main_Page) | The holy grail on OS development
+
