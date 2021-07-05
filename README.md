@@ -1,5 +1,5 @@
 # EliteOS
-An x86_64 OS from the ground up, strictly made for learning purposes. Right now it is only a bootloader compatible with legacy BIOS. This is obviously not elite compared to other operating systems. I just like the word elite. I am a complete beginner with operating sytem development. I am fueled with a curiosity on all the intricate processes involved in getting the hardware to run userspace applications with performance and security. Expect beginner mistakes.
+An OS for the x86_64 architecture from the ground up, strictly made for learning purposes. Right now it is only a bootloader compatible with legacy BIOS. This is obviously not elite compared to other operating systems. I just like the word elite. I am a complete beginner with operating sytem development. I am fueled with a curiosity on all the intricate processes involved in getting the hardware to run userspace applications with performance and security. Expect beginner mistakes.
 
 ## Build Instructions
 1. Get this repository 
