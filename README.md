@@ -10,7 +10,7 @@ An x86_64 OS from the ground up, strictly made for learning purposes. Right now 
 CMake: Build system
 
 ## Testing
-I have tested this on a Lenovo Thinkpad 11E with Intel Celero N3160 and QEMU v1.3.0.
+I test this on physical hardware using a Lenovo Thinkpad 11E with a Intel Celero N3160 processor via USB emulation. I also test this on a virtual x86_64 machine with QEMU v1.3.0.
 
 ## Credits:
 Name|Reason
