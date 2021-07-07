@@ -1,3 +1,6 @@
+# Weird VSCode cache files
+.fuse_hidden*
+
 # Prerequisites
 *.d
 
