@@ -18,8 +18,8 @@ org 07C00h
 ; We start in real mode which is 16-bit addressing only
 bits 16
 
-; Here is where the BIOS parameter block information goes, that is part
-; of each sector. Most BIOS expect this data to be in the first sector of the
+; Here is where the BIOS parameter block information goes, that is the first 
+; part of this sector. Most BIOS expect this data to be in the first sector of the
 ; storage medium.
 bpb_start:
     ; Jump over the BIOS parameter block information
@@ -39,104 +39,64 @@ set_csip:
     nop
 
 div_by_zero:
-    mov si, div_by_zero_str
-    call print
-    hlt
+    iret 
 
 nmi:
-    mov si, nmi_str
-    call print
-    hlt
+    iret
 
 invalid_opcode:
-    mov si, invalid_opcode_str
-    call print
-    hlt
+    iret
 
 double_fault:
-    mov si, double_fault_str
-    call print
-    hlt
+    iret
 
 general_protection_fault:
-    mov si, general_protection_fault_str
-    call print
-    hlt
+    iret
 
 ; Entry point
 start:
     ; Disable interrupts by clearing interrupt flag to change segment registers.
-    ; We don't want to be interrupted during this, or our bootloader will not
-    ; be setup correctly
+    ; Only maskable interrupts will be ignored during this, or our bootloader 
+    ; will not be setup correctly
     cli
-    ; Setup the segment registers. We have to use a register to set their values
-    ; We do this because we don't want to rely on the BIOS to set them up for us
-    ; and potentially get the wrong address of labels. It could set our segment
-    ; registers to 0, and origin to 0x7C00, or vice versa since some BIOSes are different.
+    ; Setup the interrupt descriptor table which is located at absolute address 0x0.
+    ; Each entry is 4 bytes where bits 0-15 are the offset, and bits 16-31 are the segment.
+    ; We have to setup the DS segment to point to zero so we do 0 * 16 + offset == IDT location
     mov ax, 0
-    mov ds, ax     ; Data segment
-    mov es, ax     ; Extra segment
-    mov ss, ax     ; Stack segment
-    mov sp, 07C00h ; Stack pointer currently will point to data in RAM before this bootloader
+    mov ds, ax     
+    mov word [0], div_by_zero                 ; Divide by zero
+    mov word [2], 0                           ; Divide by zero
+    mov dword [8], nmi                        ; Nonmaskable
+    mov dword [1Ah], invalid_opcode           ; Invalid opcode
+    mov dword [24h], double_fault             ; Double fault
+    mov dword [3Ah], general_protection_fault ; General protection fault
 
-    ; Setup the interrupt vector table
-    mov word [0], div_by_zero ; Divide by zero offset
-    mov word [2], 0           ; 
-    mov word [8], nmi           ; Nonmaskable
-    mov word [0Ah], 0
-    mov word [1Ah], invalid_opcode ; Invalid Opcode
-    mov word [1Ch], 0
-    mov word [24h], double_fault ; Double fault
-    mov word [26h], 0
-    mov word [3Ah], general_protection_fault ; General protection fault
-    mov word [3Ch], 0
+    ; Begin the process to switch to 32-bit protected mode by read the data 
+    ; from the GDT descriptor we have created so the CPU knows about the GDT.
+    ; Also, tell the CPU about the IDT using the IDT descriptor
+    ; Use explicit ds segment to avoid NASM cs since it is a label
+    lgdt [ds:gdt32_descriptor]
+    lidt [ds:idt32_descriptor]
 
-    mov si, about_test_int
-    call print
-
-    ; Use cpuid to check if our processor supports long mode.
-    ; NOTE: Assuming cpuid exists on this PC. This could be a potential bug.
-    mov eax, 80000000h ; Check if we have any extended fxns
-    cpuid
-    cmp eax, 80000000h ; If no extended fxns (eax <= 0x80000000), no long mode
-    jbe long_mode_not_available
-    mov eax, 80000001h ; Use extended fxn 80000001h to verify long mode
-    cpuid
-    bt edx, 29         ; Copy long mode bit into carry flag and check if set
-    jnc long_mode_not_available
-    mov si, long_mode_available_str
-    call print
-
-    ; We should have long mode verified at this point, so read the data for
-    ; the GDT from the GDT descriptor we have created. Use explicit ds segment
-    ; to avoid NASM cs since it is a label
-    lgdt [ds:gdt_32_descriptor]
-
-    ; We can now set the CR0 control register PE bit. AMD64 manual sets these 
-    ; protected-mode enable bit (bit 0) and the monitor coprocessor (bit 1) with this.
-    ; PE bit is obvious why. Setting MP bit causes the WAIT/FWAIT instructions to work
-    ; properly.
-    mov eax, 000000011h
+    ; We can now set the CR0 control register PE bit which will enable (not turn on)
+    ; protected mode. We are still in 16-bit protected mode until we perform the
+    ; a far jump which sets the CS register to recognize and run 32-bit code 
+    ; due to the code segment descriptor
+    mov cr0, eax
+    or eax, 1
     mov cr0, eax
 
     ; Segment registers are now segment selectors, which are indexes to the GDT.
     ; The processor multiplies it by the size of a segment descriptor (8), then
-    ; adds that as a base address.
+    ; adds that as a base address. protected Jump to the 32-bit code to 
+    ; clear the instruction queue of 16-bit code. I can simply use the byte offset 
+    ; from the beginning to the code in bytes from the base address of the GDT, 
+    ; then shift to get place the bits in the table index position.
     ; Segment selector looks like
     ; Bits 0-1: Requested Privledge level
     ; Bit 2: Table Indicator (0 for GDT, 1 for LDT)
     ; Bits 3-15: Table index
     jmp (((gdt_cs_descriptor - global_descriptor_table) / 8) << 3):startprot32
-
-long_mode_not_available:
-    mov si, long_mode_not_available_str
-    call print
-    jmp $
-
-    ; Enables interrupts again by setting the interrupt flags
-    ; TODO: Remember to tell BIOS what mode we plan to boot in with int 15h
-done:
-    sti
 
 ; print: Prints a nullterminated string 
 ; @param si: the string to print
@@ -162,6 +122,7 @@ end:
     ret
 
 ; print: Prints a single character using the BIOS video subroutine
+; NOTE: We can't call this function as soon as we enter BIOS mode.
 ; @param dl: the character to print.
 ;
 ; Uses BIOS Video subroutine Int 10h teletype output mode
@@ -183,15 +144,53 @@ printChar:
     int 10h
     ret
 
+; Here starts the 32-bit code for when we successfully switched to 32-bit
+; protected mode.
+[bits 32]
+startprot32:
+    ; The processor needs to have a stack to save the state before jumping to
+    ; an interrupt. We will set the all the rest of the segment selectors to
+    ; point to the entire 4GB address space. 
+    mov ax, (((gdt_ds_descriptor - global_descriptor_table) / 8) << 3)
+    mov es, ax
+    mov ds, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, 000200000h
+    mov ebp, esp
+
+    ; Use cpuid to check if our processor supports long mode.
+    ; NOTE: Assuming cpuid exists on this PC. This could be a potential bug.
+    mov eax, 80000000h ; Check if we have any extended fxns
+    cpuid
+    cmp eax, 80000000h ; If no extended fxns (eax <= 0x80000000), no long mode
+    jbe long_mode_not_available
+    mov eax, 80000001h ; Use extended fxn 80000001h to verify long mode
+    cpuid
+    bt edx, 29         ; Copy long mode bit into carry flag and check if set
+    jnc long_mode_not_available
+
+    ; Here we will begin to attempt to turn on long mode.
+    ; TODO: Remember to tell BIOS what mode we plan to boot in with int 15h
+    jmp $
+
+; Here we should jump to the kernel here and avoid attempt to setup long mode
+; TODO: Remember to renable maskable interrupts once we get the IDT setup 
+; correctly 
+long_mode_not_available:
+    jmp $
+
 ; We need to make sure the GDT is on a quadword boundary.
 align 8
 
 ; Here is the global descriptor table (GDT), where we contain information about the
-; memory segments in that can be selected using the segment registers. Stored
-; here as the AMD64 manual says this should be aligned on a quadword boundary.
+; memory segments for use in 32-bit protected mode. These can be selected using the
+; segment selectors, which are the segment registers CS, DS and so on. The AMD64
+; manual says this should be aligned on a quadword boundary.
 ; segment registers are now known as segment selectors, which are indexes into
-; either this or the local descriptor table (LDT), which is identified in the 
-; value stored in the segement selector.
+; either this or the local descriptor table (LDT). Which one is specified in the bitfield
+; in the instruction bitfield
 ;
 ; Each entry is 8 bytes, and describes information about it such as permissions,
 ; usage information, and type.
@@ -201,15 +200,17 @@ global_descriptor_table:
     dq 0 ; Null selector should have all zeros for its 8-bytes
 
 ; Describes the code segment for this bootloader code that the CS register 
-; should reference when jumping to here.
+; should reference. We will need a seperate entry for the 32/64 bit code descriptor
+; for when we switch to long mode.
+;  
 gdt_cs_descriptor:
-    dw 0FFFFh ; Limit or highest accessable virtual address by this segment (Bits 0-15)
-    dw 0      ; Bits 15-0 of this segment's virtual base address.  
-    db 0      ; Bits 23-16 of this segment's virtual base address. This code won't need that
+    dw 0FFFFh ; Limit or highest accessable linear address by this segment (Bits 0-15)
+    dw 0      ; Bits 15-0 of this segment's linear base address.  
+    db 0      ; Bits 23-16 of this segment's linear base address. This code won't need that
     db 09Ah   ; Bitfield describing this segment
-              ; P DPL S T C R A
+              ; P DPL S T C R AX
               ; 1 0 0 1 1 0 1 0
-              ; P: Present, as in this segment is loaded in memory. 1 since it is present
+              ; P: Present, as in this segment isz loaded in memory. 1 since it is present
               ; DPL: descriptor privilege level: 0 so highest privileged
               ; S: Descriptor type. 1 for user
               ; T: 1 for code type. Simply an addition for discerning from system descriptors
@@ -218,8 +219,8 @@ gdt_cs_descriptor:
               ; A: Accessed. Processor sets when descriptor is copied to CS reg. Software should leave at 0
     db 0DFh   ; Bitfield with more information about segment
               ; G D R A SegLim
-              ; 1 1 0 1 1 1 1
-              ; SegLim: Bits 16-19 of 20-bit segment limit
+              ; 1 1 0 1 1 1 1 1
+              ; SegLim: Bits 19-16 of 20-bit segment limit
               ; A: Available to software. We'll keep it to 1 for now
               ; R: Reserved. SHould be cleared adhereing to AMD SystemProg manual
               ; D: Default operand size. Needs to be 1 for 32-bit protected mode
@@ -233,9 +234,9 @@ gdt_cs_descriptor:
 ; AMD manuals both say this should be able to be used as a stack, so we got to
 ; make sure the SP points to the end, and everything else to the start
 gdt_ds_descriptor:
-    dw 0FFFFh ; Limit or highest accessable virtual address by this segment (Bits 0-15)
-    dw 0      ; Bits 15-0 of this segment's virtual base address.
-    db 0      ; Bits 23-16 of this segment's virtual base address 
+    dw 0FFFFh ; Limit or highest accessable linear address by this segment (Bits 0-15)
+    dw 0      ; Bits 15-0 of this segment's linear base address (location of byte 0 of this segment).
+    db 0      ; Bits 23-16 of this segment's linear base address 
     db 92h    ; Bitfield describing this segment
               ; P DPL S T E W A
               ; 1 0 0 1 0 0 1 0
@@ -251,8 +252,8 @@ gdt_ds_descriptor:
               ; A: Accessed. Processor sets when descriptor is copied to CS reg. Software should leave at 0
     db 0DFh   ; Bitfield with more information about segment
               ; G D R A SegLim
-              ; 1 1 0 1 1 1 1
-              ; SegLim: Bits 16-19 of 20-bit segment limit
+              ; 1 1 0 1 1 1 1 1
+              ; SegLim: Bits 19-16 of 20-bit segment limit
               ; A: Available to software. We'll keep it to 1 for now
               ; R: Reserved. SHould be cleared adhereing to AMD SystemProg manual
               ; D: Default operand size. Needs to be 1 for 32-bit protected mode
@@ -262,29 +263,23 @@ gdt_ds_descriptor:
 global_descriptor_table_end:
 
 ; This contains information about the GDT such as its size and its location
-; This will to be loaded into the GDTR register respective to 32-bit protected mode. 
-gdt_32_descriptor:
+; This will be loaded into the GDTR register and is for legacy mode. Its required
+; to load 32-bit protected mode. 
+gdt32_descriptor:
     ; Size or limit of GDT in bytes. Used by adding to the base address and checking if requested address is within
     dw global_descriptor_table_end - global_descriptor_table - 1
     ; Base address of the GDT
     dd global_descriptor_table
 
-div_by_zero_str db "DivbyZero!", 0Dh, 0Ah, 0
-nmi_str db "NMI!", 0Dh, 0Ah, 0
-about_test_int db "About to test !", 0Dh, 0Ah, 0
-invalid_opcode_str db "Invalid opcode!", 0Dh, 0Ah, 0
-double_fault_str db "Double fault!", 0Dh, 0Ah, 0
-general_protection_fault_str db "General protection fault!", 0Dh, 0Ah, 0
-about_to_switch_str db "About to turn on PE bit!", 0Dh, 0Ah, 0
-long_mode_available_str db "Long mode exists!", 0Dh, 0Ah, 0
-long_mode_not_available_str db "Long mode does not exist :(", 0Dh, 0Ah, 0
-
-; Here starts the 32-bit code for when we successfully switched to 
-; protected mode.
-bits 32
-startprot32:
-    jmp $
-
+; This contains information about the interrupt descriptor. This should handle
+; all 256 entries for the IDT later.
+idt32_descriptor:
+    ; Size or limit of IDT. Used same as GDT limit. For now will set it to the
+    ; maximum, but I still need to make sure to actually define all 256 interrupts.
+    dw 100h
+    ; Base address of IDT which should be absolute address 0 in RAM.
+    ; This IDT will be used for all submodes in legacy mode 
+    dd 0
 
 ; Pads the rest of the sector up to the 510th byte with 0s
 ; $: current address of program after adding everything above.
